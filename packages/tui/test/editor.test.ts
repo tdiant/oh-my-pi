@@ -795,6 +795,138 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Word navigation (Option/Alt + Left/Right)", () => {
+		const wordLeft = "\x1bb"; // ESC-b (matches alt+left on most terminals / our matcher)
+		const wordRight = "\x1bf"; // ESC-f (matches alt+right on most terminals / our matcher)
+
+		it("moves by CJK and punctuation blocks in Chinese", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const text = "天气不错，去散步吧！";
+			editor.setText(text);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+			// ! is punctuation delimiter
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length - "！".length });
+			// Jump over the CJK run "去散步吧"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("，") + 1 });
+			// Jump over the punctuation delimiter "，"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("，") });
+			// Jump over the CJK run "天气不错"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: 0 });
+			// And forward again
+			editor.handleInput(wordRight);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("，") });
+			editor.handleInput(wordRight);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("，") + 1 });
+			editor.handleInput(wordRight);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length - "！".length });
+			editor.handleInput(wordRight);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+		});
+
+		it("moves by mixed kana/kanji blocks in Japanese", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const text = "天気がいいから、散歩しましょう！";
+			editor.setText(text);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+			// Skip the final delimiter
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length - "！".length });
+			// Jump over the CJK run after the comma
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("、") + 1 });
+			// Skip the comma delimiter
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("、") });
+			// Jump over the first CJK run
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: 0 });
+		});
+
+		it("moves by words and Unicode punctuation in Spanish", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const text = "¿Cómo estás? ¡Muy bien!";
+			editor.setText(text);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+			// Skip the final delimiter (!), then jump over "bien"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("!") });
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.lastIndexOf("bien") });
+			// Jump over "Muy"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("Muy") });
+			// The inverted exclamation is a delimiter block
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("¡") });
+			// Skip space + '?' delimiter (block semantics)
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("?") });
+			// Then jump over "estás"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("estás") });
+		});
+
+		it("treats NBSP as whitespace for word navigation", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const nbsp = "\u00A0";
+			const text = `Hola${nbsp}mundo`;
+			editor.setText(text);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("mundo") });
+		});
+
+		it("keeps common joiners inside words", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const text = "co-operate l’été";
+			editor.setText(text);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+			// Jump over the last word as a single unit (keeps ’ inside)
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("l’été") });
+			// Then jump over the hyphenated word as a single unit
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: 0 });
+		});
+
+		it("recognizes Unicode quotes and dashes as delimiter blocks", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const text = "„überraschend“ — wirklich?";
+			editor.setText(text);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+			// '?' delimiter
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("?") });
+			// jump over "wirklich"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("wirklich") });
+			// em dash delimiter
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("—") });
+		});
+
+		it("recognizes Russian quotes and dashes as delimiter blocks", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const text = "«Привет — мир»";
+			editor.setText(text);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.length });
+			// closing quote delimiter
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("»") });
+			// jump over "мир"
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("мир") });
+			// em dash delimiter
+			editor.handleInput(wordLeft);
+			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("—") });
+		});
+	});
+
+
 	describe("Sticky column", () => {
 		it("preserves target column when moving up through a shorter line", () => {
 			const editor = new Editor(defaultEditorTheme);

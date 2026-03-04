@@ -2,7 +2,7 @@ import { BracketedPasteHandler } from "../bracketed-paste";
 import { getEditorKeybindings } from "../keybindings";
 import { KillRing } from "../kill-ring";
 import { type Component, CURSOR_MARKER, type Focusable } from "../tui";
-import { getSegmenter, isPunctuationChar, isWhitespaceChar, padding, visibleWidth } from "../utils";
+import { getSegmenter, getWordNavKind, isWordNavJoiner, isWhitespaceChar, padding, visibleWidth } from "../utils";
 
 const segmenter = getSegmenter();
 
@@ -173,7 +173,7 @@ export class Input implements Component, Focusable {
 	}
 
 	#insertCharacter(text: string): void {
-		const isWordChunk = [...text].every(ch => !isWhitespaceChar(ch));
+		const isWordChunk = [...segmenter.segment(text)].every(seg => getWordNavKind(seg.segment) !== "whitespace");
 		// Undo coalescing: consecutive word typing coalesces into one undo unit.
 		if (!isWordChunk || this.#lastAction !== "type-word") {
 			this.#pushUndo();
@@ -341,26 +341,46 @@ export class Input implements Component, Focusable {
 		const graphemes = [...segmenter.segment(textBeforeCursor)];
 
 		// Skip trailing whitespace
-		while (graphemes.length > 0 && isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "")) {
+		while (graphemes.length > 0 && getWordNavKind(graphemes[graphemes.length - 1]?.segment || "") === "whitespace") {
 			this.#cursor -= graphemes.pop()?.segment.length || 0;
 		}
 
 		if (graphemes.length > 0) {
-			const lastGrapheme = graphemes[graphemes.length - 1]?.segment || "";
-			if (isPunctuationChar(lastGrapheme)) {
-				// Skip punctuation run
-				while (graphemes.length > 0 && isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")) {
+			const last = graphemes[graphemes.length - 1]?.segment || "";
+			const kind = getWordNavKind(last);
+			if (kind === "delimiter") {
+				// Skip delimiter run (punctuation/symbols)
+				while (graphemes.length > 0 && getWordNavKind(graphemes[graphemes.length - 1]?.segment || "") === "delimiter") {
 					this.#cursor -= graphemes.pop()?.segment.length || 0;
+				}
+			} else if (kind === "cjk") {
+				// Skip CJK run (Han/Hiragana/Katakana/Hangul)
+				while (graphemes.length > 0 && getWordNavKind(graphemes[graphemes.length - 1]?.segment || "") === "cjk") {
+					this.#cursor -= graphemes.pop()?.segment.length || 0;
+				}
+			} else if (kind === "word") {
+				// Skip word run (letters/numbers/underscore), keeping common joiners inside words.
+				let hasRightWord = false;
+				while (graphemes.length > 0) {
+					const g = graphemes[graphemes.length - 1]?.segment || "";
+					const k = getWordNavKind(g);
+					if (k === "word") {
+						hasRightWord = true;
+						this.#cursor -= graphemes.pop()?.segment.length || 0;
+						continue;
+					}
+					if (hasRightWord && k === "delimiter" && isWordNavJoiner(g)) {
+						const left = graphemes[graphemes.length - 2]?.segment || "";
+						if (getWordNavKind(left) === "word") {
+							this.#cursor -= graphemes.pop()?.segment.length || 0;
+							continue;
+						}
+					}
+					break;
 				}
 			} else {
-				// Skip word run
-				while (
-					graphemes.length > 0 &&
-					!isWhitespaceChar(graphemes[graphemes.length - 1]?.segment || "") &&
-					!isPunctuationChar(graphemes[graphemes.length - 1]?.segment || "")
-				) {
-					this.#cursor -= graphemes.pop()?.segment.length || 0;
-				}
+				// Fallback: move by one grapheme
+				this.#cursor -= graphemes.pop()?.segment.length || 0;
 			}
 		}
 	}
@@ -372,32 +392,57 @@ export class Input implements Component, Focusable {
 
 		this.#lastAction = null;
 		const textAfterCursor = this.#value.slice(this.#cursor);
-		const segments = segmenter.segment(textAfterCursor);
-		const iterator = segments[Symbol.iterator]();
-		let next = iterator.next();
+		const graphemes = [...segmenter.segment(textAfterCursor)];
+		let i = 0;
 
 		// Skip leading whitespace
-		while (!next.done && isWhitespaceChar(next.value.segment)) {
-			this.#cursor += next.value.segment.length;
-			next = iterator.next();
+		while (i < graphemes.length && getWordNavKind(graphemes[i]?.segment || "") === "whitespace") {
+			this.#cursor += graphemes[i]?.segment.length || 0;
+			i++;
 		}
 
-		if (!next.done) {
-			const firstGrapheme = next.value.segment;
-			if (isPunctuationChar(firstGrapheme)) {
-				// Skip punctuation run
-				while (!next.done && isPunctuationChar(next.value.segment)) {
-					this.#cursor += next.value.segment.length;
-					next = iterator.next();
+		if (i < graphemes.length) {
+			const kind = getWordNavKind(graphemes[i]?.segment || "");
+			if (kind === "delimiter") {
+				// Skip delimiter run (punctuation/symbols)
+				while (i < graphemes.length && getWordNavKind(graphemes[i]?.segment || "") === "delimiter") {
+					this.#cursor += graphemes[i]?.segment.length || 0;
+					i++;
+				}
+			} else if (kind === "cjk") {
+				// Skip CJK run (Han/Hiragana/Katakana/Hangul)
+				while (i < graphemes.length && getWordNavKind(graphemes[i]?.segment || "") === "cjk") {
+					this.#cursor += graphemes[i]?.segment.length || 0;
+					i++;
+				}
+			} else if (kind === "word") {
+				// Skip word run (letters/numbers/underscore), keeping common joiners inside words.
+				let hasLeftWord = false;
+				while (i < graphemes.length) {
+					const g = graphemes[i]?.segment || "";
+					const k = getWordNavKind(g);
+					if (k === "word") {
+						hasLeftWord = true;
+						this.#cursor += g.length;
+						i++;
+						continue;
+					}
+					if (hasLeftWord && k === "delimiter" && isWordNavJoiner(g)) {
+						const right = graphemes[i + 1]?.segment || "";
+						if (getWordNavKind(right) === "word") {
+							this.#cursor += g.length;
+							i++;
+							continue;
+						}
+					}
+					break;
 				}
 			} else {
-				// Skip word run
-				while (!next.done && !isWhitespaceChar(next.value.segment) && !isPunctuationChar(next.value.segment)) {
-					this.#cursor += next.value.segment.length;
-					next = iterator.next();
-				}
+				// Fallback: move by one grapheme
+				this.#cursor += graphemes[i]?.segment.length || 0;
 			}
 		}
+
 	}
 
 	#handlePaste(pastedText: string): void {
