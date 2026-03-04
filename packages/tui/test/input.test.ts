@@ -1,5 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import { CURSOR_MARKER } from "@oh-my-pi/pi-tui";
 import { Input } from "@oh-my-pi/pi-tui/components/input";
+import { visibleWidth } from "@oh-my-pi/pi-tui/utils";
+
+function renderedWidth(input: Input, width: number): number {
+	const [line] = input.render(width);
+	// TUI strips this marker before its width verification; tests should mimic that.
+	return visibleWidth(line.replaceAll(CURSOR_MARKER, ""));
+}
+
 
 describe("Input component", () => {
 	const wordLeft = "\x1bb"; // ESC-b (alt+b)
@@ -108,5 +117,15 @@ describe("Input component", () => {
 			input.handleInput("|");
 			expect(input.getValue()).toBe("¿Cómo estás? ¡Muy |bien!");
 		}
+	});
+
+	it("never renders a line wider than the terminal width (wide chars)", () => {
+		const input = new Input();
+		input.focused = true;
+		// Long wide-script text: string length != terminal cell width.
+		input.setValue("天气不错，去散步吧！".repeat(50));
+		input.handleInput("\x05"); // Ctrl+E (end)
+		const width = 40;
+		expect(renderedWidth(input, width)).toBeLessThanOrEqual(width);
 	});
 });
