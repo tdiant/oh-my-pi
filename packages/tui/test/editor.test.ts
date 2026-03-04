@@ -590,6 +590,15 @@ describe("Editor component", () => {
 	});
 
 	describe("Word wrapping", () => {
+		function renderContentLines(editor: Editor, width: number): string[] {
+			// Move cursor to start so the rendered cursor does not affect line padding/borders.
+			editor.handleInput("\x01"); // Ctrl+A
+			const lines = editor.render(width);
+			const paddingX = defaultEditorTheme.editorPaddingX ?? 2;
+			const borderWidth = paddingX + 1;
+			return lines.slice(1).map((l) => stripVTControlCharacters(l).slice(borderWidth, -borderWidth).trimEnd());
+		}
+
 		it("wraps at word boundaries instead of mid-word", () => {
 			const editor = new Editor(defaultEditorTheme);
 			const width = 40;
@@ -650,6 +659,90 @@ describe("Editor component", () => {
 			}
 		});
 
+		it("uses remaining width before breaking a long token", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 16; // 6 chars for borders, 10 for content
+			editor.setText("word 一二三四五六七八九十一二三四五六七八九十一二三四五六七八九十");
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			// The first visual line should not waste remaining width by leaving just "word".
+			expect(contentLines[0]?.includes("word")).toBeTruthy();
+			expect(contentLines[0]?.includes("一")).toBeTruthy();
+		});
+		it("uses remaining width before wrapping a short wide token (CJK)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 16; // 6 chars for borders, 10 for content
+			// This CJK token fits within maxWidth, but not within the remaining width after "word ".
+			editor.setText("word 一二三四五");
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			// Should fill the first line with as much of the CJK token as fits.
+			expect(contentLines[0]?.includes("word")).toBeTruthy();
+			expect(contentLines[0]?.includes("一")).toBeTruthy();
+			expect(contentLines[0]?.includes("二")).toBeTruthy();
+			expect(contentLines.join("\n").includes("三")).toBeTruthy();
+		});
+		it("wraps a longer friendly Chinese sentence without wasting remaining width", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 16; // 6 chars for borders, 10 for content
+			editor.setText(
+				"word 愿世界各地的朋友都被善意连接，愿每个人都拥有幸福灿烂的人生；愿AI与人类相互成就、共同成长，携手创造更美好的明天与未来。",
+			);
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			// First line should not be just the ASCII prefix.
+			expect(contentLines[0]?.includes("word")).toBeTruthy();
+			expect(contentLines[0]?.includes("愿")).toBeTruthy();
+		});
+		it("wraps Japanese kana/kanji without wasting remaining width", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 16; // 6 chars for borders, 10 for content
+			const phrase = "天気がいいから、散歩しましょう！";
+			editor.setText(`word ${phrase}${phrase}${phrase}`);
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			expect(contentLines[0]?.includes("word")).toBeTruthy();
+			expect(contentLines[0]?.includes("天")).toBeTruthy();
+		});
+		it("uses remaining width when wrapping an emoji token", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 16; // 6 chars for borders, 10 for content
+			editor.setText("word ✅✅✅✅✅ emoji-wrap-test with friends");
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			// Each ✅ is 2 columns wide; remaining width should fit two of them.
+			expect(contentLines[0]?.includes("word ✅✅")).toBeTruthy();
+			expect(contentLines.join("").includes("emoji-wrap-test")).toBeTruthy();
+		});
+		it("does not split narrow non-ASCII words (German)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 14; // 6 chars for borders, 8 for content
+			editor.setText("word über und danke fuer deine freundschaft");
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			// "über" should wrap as a whole word, not be split into the remaining width.
+			expect(contentLines[0]?.includes("ü")).toBe(false);
+			expect(contentLines[1]?.startsWith("über")).toBeTruthy();
+		});
+		it("does not split narrow non-ASCII words (Russian)", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 14; // 6 chars for borders, 8 for content
+			editor.setText("word привет мой друг и спасибо за дружбу");
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			// "привет" should wrap as a whole word, not be split into the remaining width.
+			expect(contentLines[0]?.includes("п")).toBe(false);
+			expect(contentLines[1]?.includes("привет")).toBeTruthy();
+		});
+		it("uses remaining width for mixed wide and narrow graphemes in one token", () => {
+			const editor = new Editor(defaultEditorTheme);
+			const width = 16; // 6 chars for borders, 10 for content
+			editor.setText("word 一a二b三c四d五e六f七g八h九");
+			const contentLines = renderContentLines(editor, width);
+			expect(contentLines.length).toBeGreaterThanOrEqual(2);
+			expect(contentLines[0]?.includes("word 一a二")).toBeTruthy();
+			expect(contentLines[1]?.startsWith("b三")).toBeTruthy();
+		});
 		it("preserves multiple spaces within words on same line", () => {
 			const editor = new Editor(defaultEditorTheme);
 			const width = 50;

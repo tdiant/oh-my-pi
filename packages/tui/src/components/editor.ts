@@ -89,6 +89,27 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 	let chunkStartIndex = 0;
 	let atLineStart = true; // Track if we're at the start of a line (for skipping whitespace)
 
+	function consumePrefixToWidth(text: string, availableWidth: number): { text: string; len: number } {
+		let prefix = "";
+		let prefixWidth = 0;
+		let len = 0;
+		for (const seg of segmenter.segment(text)) {
+			const grapheme = seg.segment;
+			const graphemeWidth = visibleWidth(grapheme);
+			if (prefixWidth + graphemeWidth > availableWidth) break;
+			prefix += grapheme;
+			prefixWidth += graphemeWidth;
+			len += grapheme.length;
+			if (prefixWidth === availableWidth) break;
+		}
+		return { text: prefix, len };
+	}
+	function hasWideGrapheme(text: string): boolean {
+		for (const seg of segmenter.segment(text)) {
+			if (visibleWidth(seg.segment) > 1) return true;
+		}
+		return false;
+	}
 	for (const token of tokens) {
 		const tokenWidth = visibleWidth(token.text);
 
@@ -101,28 +122,46 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 
 		// If this single token is wider than maxWidth, we need to break it
 		if (tokenWidth > maxWidth) {
-			// First, push any accumulated chunk
-			if (currentChunk) {
-				chunks.push({
-					text: currentChunk,
-					startIndex: chunkStartIndex,
-					endIndex: token.startIndex,
-				});
-				currentChunk = "";
-				currentWidth = 0;
-				chunkStartIndex = token.startIndex;
+			// If we're mid-line, try to use the remaining width by consuming a prefix of this long token.
+			let consumedPrefix = "";
+			let consumedPrefixLen = 0; // JS string index (code units) consumed from token.text
+			if (currentChunk && currentWidth < maxWidth) {
+				const remainingWidth = maxWidth - currentWidth;
+				const consumed = consumePrefixToWidth(token.text, remainingWidth);
+				consumedPrefix = consumed.text;
+				consumedPrefixLen = consumed.len;
 			}
-
-			// Break the long token by grapheme
+			// First, push any accumulated chunk (optionally filled with the prefix).
+			if (currentChunk) {
+				if (consumedPrefix) {
+					chunks.push({
+						text: currentChunk + consumedPrefix,
+						startIndex: chunkStartIndex,
+						endIndex: token.startIndex + consumedPrefixLen,
+					});
+					currentChunk = "";
+					currentWidth = 0;
+					chunkStartIndex = token.startIndex + consumedPrefixLen;
+				} else {
+					chunks.push({
+						text: currentChunk,
+						startIndex: chunkStartIndex,
+						endIndex: token.startIndex,
+					});
+					currentChunk = "";
+					currentWidth = 0;
+					chunkStartIndex = token.startIndex;
+				}
+			}
+			// Break the remaining long token by grapheme
+			const remainingText = consumedPrefixLen > 0 ? token.text.slice(consumedPrefixLen) : token.text;
 			let tokenChunk = "";
 			let tokenChunkWidth = 0;
-			let tokenChunkStart = token.startIndex;
-			let tokenCharIndex = token.startIndex;
-
-			for (const seg of segmenter.segment(token.text)) {
+			let tokenChunkStart = token.startIndex + consumedPrefixLen;
+			let tokenCharIndex = token.startIndex + consumedPrefixLen;
+			for (const seg of segmenter.segment(remainingText)) {
 				const grapheme = seg.segment;
 				const graphemeWidth = visibleWidth(grapheme);
-
 				if (tokenChunkWidth + graphemeWidth > maxWidth && tokenChunk) {
 					chunks.push({
 						text: tokenChunk,
@@ -138,7 +177,6 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 				}
 				tokenCharIndex += grapheme.length;
 			}
-
 			// Keep remainder as start of next chunk
 			if (tokenChunk) {
 				currentChunk = tokenChunk;
@@ -150,6 +188,25 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 
 		// Check if adding this token would exceed width
 		if (currentWidth + tokenWidth > maxWidth) {
+			// For wide-character tokens (e.g., CJK runs), prefer using remaining width before wrapping
+			// the whole token to the next line. This avoids leaving a short ASCII word alone.
+			if (currentChunk && !token.isWhitespace && currentWidth < maxWidth && hasWideGrapheme(token.text)) {
+				const remainingWidth = maxWidth - currentWidth;
+				const consumed = consumePrefixToWidth(token.text, remainingWidth);
+				if (consumed.text) {
+					chunks.push({
+						text: currentChunk + consumed.text,
+						startIndex: chunkStartIndex,
+						endIndex: token.startIndex + consumed.len,
+					});
+					const remainder = token.text.slice(consumed.len);
+					currentChunk = remainder;
+					currentWidth = visibleWidth(remainder);
+					chunkStartIndex = token.startIndex + consumed.len;
+					atLineStart = false;
+					continue;
+				}
+			}
 			// Push current chunk (trimming trailing whitespace for display)
 			const trimmedChunk = currentChunk.trimEnd();
 			if (trimmedChunk || chunks.length === 0) {
@@ -159,7 +216,6 @@ function wordWrapLine(line: string, maxWidth: number): TextChunk[] {
 					endIndex: chunkStartIndex + currentChunk.length,
 				});
 			}
-
 			// Start new line - skip leading whitespace
 			atLineStart = true;
 			if (token.isWhitespace) {
