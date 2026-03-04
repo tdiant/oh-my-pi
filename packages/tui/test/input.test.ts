@@ -9,7 +9,6 @@ function renderedWidth(input: Input, width: number): number {
 	return visibleWidth(line.replaceAll(CURSOR_MARKER, ""));
 }
 
-
 describe("Input component", () => {
 	const wordLeft = "\x1bb"; // ESC-b (alt+b)
 	const wordRight = "\x1bf"; // ESC-f (alt+f)

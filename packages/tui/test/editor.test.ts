@@ -596,7 +596,7 @@ describe("Editor component", () => {
 			const lines = editor.render(width);
 			const paddingX = defaultEditorTheme.editorPaddingX ?? 2;
 			const borderWidth = paddingX + 1;
-			return lines.slice(1).map((l) => stripVTControlCharacters(l).slice(borderWidth, -borderWidth).trimEnd());
+			return lines.slice(1).map(l => stripVTControlCharacters(l).slice(borderWidth, -borderWidth).trimEnd());
 		}
 
 		it("wraps at word boundaries instead of mid-word", () => {
@@ -925,7 +925,6 @@ describe("Editor component", () => {
 			expect(editor.getCursor()).toEqual({ line: 0, col: text.indexOf("—") });
 		});
 	});
-
 
 	describe("Sticky column", () => {
 		it("preserves target column when moving up through a shorter line", () => {

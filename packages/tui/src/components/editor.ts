@@ -6,7 +6,15 @@ import { matchesKey } from "../keys";
 import { KillRing } from "../kill-ring";
 import type { SymbolTheme } from "../symbols";
 import { type Component, CURSOR_MARKER, type Focusable } from "../tui";
-import { getSegmenter, getWordNavKind, isWordNavJoiner, isWhitespaceChar, padding, truncateToWidth, visibleWidth } from "../utils";
+import {
+	getSegmenter,
+	getWordNavKind,
+	isWhitespaceChar,
+	isWordNavJoiner,
+	padding,
+	truncateToWidth,
+	visibleWidth,
+} from "../utils";
 import { SelectList, type SelectListTheme } from "./select-list";
 
 const segmenter = getSegmenter();
@@ -2012,7 +2020,10 @@ export class Editor implements Component, Focusable {
 			const kind = getWordNavKind(last);
 			if (kind === "delimiter") {
 				// Skip delimiter run (punctuation/symbols)
-				while (graphemes.length > 0 && getWordNavKind(graphemes[graphemes.length - 1]?.segment || "") === "delimiter") {
+				while (
+					graphemes.length > 0 &&
+					getWordNavKind(graphemes[graphemes.length - 1]?.segment || "") === "delimiter"
+				) {
 					newCol -= graphemes.pop()?.segment.length || 0;
 				}
 			} else if (kind === "cjk") {

@@ -2,7 +2,7 @@ import { BracketedPasteHandler } from "../bracketed-paste";
 import { getEditorKeybindings } from "../keybindings";
 import { KillRing } from "../kill-ring";
 import { type Component, CURSOR_MARKER, type Focusable } from "../tui";
-import { getSegmenter, getWordNavKind, isWordNavJoiner, isWhitespaceChar, padding, sliceWithWidth, visibleWidth } from "../utils";
+import { getSegmenter, getWordNavKind, isWordNavJoiner, padding, sliceWithWidth, visibleWidth } from "../utils";
 
 const segmenter = getSegmenter();
 
@@ -350,7 +350,10 @@ export class Input implements Component, Focusable {
 			const kind = getWordNavKind(last);
 			if (kind === "delimiter") {
 				// Skip delimiter run (punctuation/symbols)
-				while (graphemes.length > 0 && getWordNavKind(graphemes[graphemes.length - 1]?.segment || "") === "delimiter") {
+				while (
+					graphemes.length > 0 &&
+					getWordNavKind(graphemes[graphemes.length - 1]?.segment || "") === "delimiter"
+				) {
 					this.#cursor -= graphemes.pop()?.segment.length || 0;
 				}
 			} else if (kind === "cjk") {
@@ -442,7 +445,6 @@ export class Input implements Component, Focusable {
 				this.#cursor += graphemes[i]?.segment.length || 0;
 			}
 		}
-
 	}
 
 	#handlePaste(pastedText: string): void {
@@ -472,7 +474,7 @@ export class Input implements Component, Focusable {
 
 		const cursorIndex = this.#cursor;
 		// Ensure we always have a grapheme to invert at the cursor (space at end).
-		const displayValue = cursorIndex >= this.#value.length ? this.#value + " " : this.#value;
+		const displayValue = cursorIndex >= this.#value.length ? `${this.#value} ` : this.#value;
 
 		const totalCols = visibleWidth(displayValue);
 		const cursorCols = visibleWidth(displayValue.slice(0, cursorIndex));

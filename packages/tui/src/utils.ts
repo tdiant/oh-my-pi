@@ -125,7 +125,12 @@ export function getWordNavKind(grapheme: string): WordNavKind {
 	if (!ch) return "other";
 	if (WORD_NAV_RE_WHITESPACE.test(ch)) return "whitespace";
 	if (WORD_NAV_RE_PUNCT.test(ch) || WORD_NAV_RE_SYMBOL.test(ch)) return "delimiter";
-	if (WORD_NAV_RE_HAN.test(ch) || WORD_NAV_RE_HIRAGANA.test(ch) || WORD_NAV_RE_KATAKANA.test(ch) || WORD_NAV_RE_HANGUL.test(ch)) {
+	if (
+		WORD_NAV_RE_HAN.test(ch) ||
+		WORD_NAV_RE_HIRAGANA.test(ch) ||
+		WORD_NAV_RE_KATAKANA.test(ch) ||
+		WORD_NAV_RE_HANGUL.test(ch)
+	) {
 		return "cjk";
 	}
 	if (ch === "_" || WORD_NAV_RE_LETTER.test(ch) || WORD_NAV_RE_NUMBER.test(ch)) return "word";
@@ -138,7 +143,6 @@ export function isWordNavJoiner(grapheme: string): boolean {
 	const ch = firstCodePointChar(grapheme);
 	return WORD_NAV_JOINERS.has(ch);
 }
-
 
 /**
  * Apply background color to a line, padding to full width.
